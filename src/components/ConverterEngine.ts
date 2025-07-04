@@ -129,7 +129,7 @@ export class ${componentName} extends UIComponent {
 ${methods}
   
   // Horizon UI lifecycle method - called after constructor
-  initializeUI(): void {
+  initializeUI(): UINode {
 ${convertedBody}
   }
   
@@ -168,7 +168,7 @@ ${convertedBody}
     // Convert React.Component to UIComponent
     return code.replace(/extends\s+React\.Component/g, 'extends UIComponent')
                .replace(/extends\s+Component/g, 'extends UIComponent')
-               .replace(/render\(\)\s*{/g, 'start(): void { // TODO: Move render logic to start() lifecycle method');
+               .replace(/render\(\)\s*{/g, 'initializeUI(): UINode { // TODO: Move render logic to initializeUI() lifecycle method');
   }
 
   private generatePropsInterface(propsStr: string, componentName: string): string {
@@ -240,7 +240,7 @@ ${convertedBody}
     if (stateVars.length > 0) {
       stateDeclarations = '\n  // TODO: Implement state as Binding<T> for Meta Horizon';
       stateVars.forEach(state => {
-        stateDeclarations += `\n  private ${state.name}: ${state.type} = ${state.initial};`;
+        stateDeclarations += `\n  private ${state.name}: Binding<${state.type}> = new Binding(${state.initial});`;
       });
     }
     
@@ -248,8 +248,7 @@ ${convertedBody}
     if (stateVars.length > 0) {
       methods = stateVars.map(state => {
         return `  private ${state.setter} = (newValue: ${state.type}) => {
-    this.${state.name} = newValue;
-    // TODO: Update binding to trigger re-render
+    this.${state.name}.set(newValue);
   };`;
       }).join('\n\n');
     }
@@ -263,6 +262,11 @@ ${convertedBody}
     // Add this. prefix to all state and prop references
     convertedBody = this.addThisPrefixToReferences(convertedBody, stateVars.map(s => s.name));
     
+    // Ensure we return a UINode
+    if (!convertedBody.includes('return ')) {
+      convertedBody += '\n    return View({});';
+    }
+    
     // Indent the body properly
     convertedBody = convertedBody.split('\n').map(line => `    ${line}`).join('\n');
     
@@ -271,37 +275,6 @@ ${convertedBody}
       methods,
       convertedBody
     };
-  }
-
-  private convertComponentBody(body: string, componentName: string): string {
-    // Convert useState to Binding
-    body = this.convertUseState(body);
-    
-    // Convert useEffect to component lifecycle
-    body = this.convertUseEffect(body);
-    
-    // Convert return statement to return JSX converted to Horizon UI
-    body = this.convertReturnStatement(body);
-    
-    // Indent the body properly
-    return body.split('\n').map(line => `    ${line}`).join('\n');
-  }
-
-  private convertUseState(code: string): string {
-    const useStateRegex = /const\s+\[(\w+),\s*(\w+)\]\s*=\s*useState\(([^)]*)\);?/g;
-    
-    return code.replace(useStateRegex, (match, stateName, setter, initialValue) => {
-      this.warnings.push(`Converting useState for ${stateName} - implement as Binding<T> for Meta Horizon`);
-      const inferredType = this.inferTypeFromValue(initialValue || 'null');
-      return `// TODO: Implement state as Binding<T>
-    private ${stateName}: ${inferredType} = ${initialValue || 'null'};
-    
-    // TODO: Create setter method for ${stateName}
-    private ${setter} = (newValue: ${inferredType}) => {
-      this.${stateName} = newValue;
-      // TODO: Update binding to trigger re-render
-    };`;
-    });
   }
 
   private convertUseEffect(code: string): string {
@@ -315,16 +288,37 @@ ${convertedBody}
     });
   }
 
-  private convertReturnStatement(code: string): string {
+  private convertReturnStatementWithThisPrefix(code: string): string {
     // Find the return statement with JSX
     const returnRegex = /return\s*\(([\s\S]*?)\);?\s*$/;
     const match = code.match(returnRegex);
     
     if (match) {
-      const jsxContent = match[1];
+      const jsxContent = match[1].trim();
+      // Convert JSX to actual Horizon UI component calls
       const convertedJSX = this.convertJSXToHorizon(jsxContent);
+      // Return the properly converted Horizon UI code
       return code.replace(returnRegex, `return ${convertedJSX};`);
     }
+    
+    return code;
+  }
+
+  private addThisPrefixToReferences(code: string, stateNames: string[]): string {
+    // Add this. prefix to props access (but not if already has this.)
+    code = code.replace(/(?<!this\.)(\bprops\.\w+)/g, 'this.$1');
+    
+    // Add this. prefix to state variable references
+    stateNames.forEach(stateName => {
+      const stateRegex = new RegExp(`(?<!this\\.)\\b${stateName}\\b`, 'g');
+      code = code.replace(stateRegex, `this.${stateName}`);
+    });
+    
+    // Add this. prefix to setter function calls (but not if already has this.)
+    code = code.replace(/(?<!this\.)(\bset\w+)\s*\(/g, 'this.$1(');
+    
+    // Add this. prefix to method calls that aren't already prefixed
+    code = code.replace(/(?<!this\.)(\bhandle\w+)(?=\s*[(),])/g, 'this.$1');
     
     return code;
   }
@@ -525,41 +519,6 @@ ${convertedBody}
     }
     
     return attributes.join(', ');
-  }
-
-  private convertReturnStatementWithThisPrefix(code: string): string {
-    // Find the return statement with JSX
-    const returnRegex = /return\s*\(([\s\S]*?)\);?\s*$/;
-    const match = code.match(returnRegex);
-    
-    if (match) {
-      const jsxContent = match[1].trim();
-      // Convert JSX to actual Horizon UI component calls
-      const convertedJSX = this.convertJSXToHorizon(jsxContent);
-      // Return the properly converted Horizon UI code
-      return code.replace(returnRegex, `return ${convertedJSX};`);
-    }
-    
-    return code;
-  }
-
-  private addThisPrefixToReferences(code: string, stateNames: string[]): string {
-    // Add this. prefix to props access (but not if already has this.)
-    code = code.replace(/(?<!this\.)(\bprops\.\w+)/g, 'this.$1');
-    
-    // Add this. prefix to state variable references
-    stateNames.forEach(stateName => {
-      const stateRegex = new RegExp(`(?<!this\\.)\\b${stateName}\\b`, 'g');
-      code = code.replace(stateRegex, `this.${stateName}`);
-    });
-    
-    // Add this. prefix to setter function calls (but not if already has this.)
-    code = code.replace(/(?<!this\.)(\bset\w+)\s*\(/g, 'this.$1(');
-    
-    // Add this. prefix to method calls that aren't already prefixed
-    code = code.replace(/(?<!this\.)(\bhandle\w+)(?=\s*[(),])/g, 'this.$1');
-    
-    return code;
   }
 
   private convertChildren(children: string): string {

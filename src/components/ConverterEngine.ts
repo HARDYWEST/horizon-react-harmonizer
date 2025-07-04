@@ -52,11 +52,11 @@ export class ReactToHorizonConverter {
     // Convert React components to Horizon UIComponent classes
     converted = this.convertComponents(converted);
     
-    // Convert JSX to Horizon UI function calls
-    converted = this.convertJSX(converted);
-    
     // Convert React hooks to Horizon bindings
     converted = this.convertHooks(converted);
+    
+    // Convert JSX to Horizon UI function calls (after hooks conversion)
+    converted = this.convertJSX(converted);
     
     return converted;
   }
@@ -104,7 +104,7 @@ export class ReactToHorizonConverter {
       };
       this.components.push(componentInfo);
       
-      const propsInterface = this.generatePropsInterface(props);
+      const propsInterface = this.generatePropsInterface(props, componentName);
       const convertedBody = this.convertComponentBody(body, componentName);
       
       return `${propsInterface}
@@ -150,9 +150,9 @@ ${convertedBody}
                .replace(/render\(\)\s*{/g, 'render(): any { // TODO: Use appropriate Meta Horizon return type');
   }
 
-  private generatePropsInterface(propsStr: string): string {
+  private generatePropsInterface(propsStr: string, componentName: string): string {
     if (!propsStr.trim()) {
-      return 'interface Props {}';
+      return `interface ${componentName}Props {}`;
     }
     
     // Extract prop names and types from destructured props
@@ -164,10 +164,10 @@ ${convertedBody}
         return `  ${name}${defaultValue ? '?' : ''}: ${type};`;
       }).join('\n');
       
-      return `interface Props {\n${props}\n}`;
+      return `interface ${componentName}Props {\n${props}\n}`;
     }
     
-    return `interface Props {\n  [key: string]: any;\n}`;
+    return `interface ${componentName}Props {\n  [key: string]: any;\n}`;
   }
 
   private inferPropType(defaultValue?: string): string {
@@ -208,10 +208,16 @@ ${convertedBody}
     const useStateRegex = /const\s+\[(\w+),\s*(\w+)\]\s*=\s*useState\(([^)]*)\);?/g;
     
     return code.replace(useStateRegex, (match, stateName, setter, initialValue) => {
-      this.warnings.push(`Converting useState for ${stateName} - implement state management for Meta Horizon`);
-      return `// TODO: Implement state management for Meta Horizon Worlds
-    private ${stateName}: ${this.inferTypeFromValue(initialValue || 'null')} = ${initialValue || 'null'};
-    // TODO: Create setter method for ${stateName}`;
+      this.warnings.push(`Converting useState for ${stateName} - implement as Binding<T> for Meta Horizon`);
+      const inferredType = this.inferTypeFromValue(initialValue || 'null');
+      return `// TODO: Implement state as Binding<T>
+    private ${stateName}: ${inferredType} = ${initialValue || 'null'};
+    
+    // TODO: Create setter method for ${stateName}
+    private ${setter} = (newValue: ${inferredType}) => {
+      this.${stateName} = newValue;
+      // TODO: Update binding to trigger re-render
+    };`;
     });
   }
 
@@ -219,10 +225,11 @@ ${convertedBody}
     const useEffectRegex = /useEffect\(\(\)\s*=>\s*{([\s\S]*?)},\s*\[([^\]]*)\]\);?/g;
     
     return code.replace(useEffectRegex, (match, effect, deps) => {
-      this.warnings.push('Converting useEffect - consider using component lifecycle methods');
-      return `// TODO: Convert this useEffect to appropriate Horizon lifecycle method
-    // Dependencies: [${deps}]
-    // Effect: ${effect.replace(/\n/g, '\n    // ')}`;
+      this.warnings.push('Converting useEffect - place logic in onInit or lifecycle method');
+      const cleanEffect = effect.trim().replace(/\n/g, '\n    // ');
+      return `// TODO: Move this to onInit or start lifecycle method
+    // Original useEffect dependencies: [${deps}]
+    // ${cleanEffect}`;
     });
   }
 
@@ -245,15 +252,32 @@ ${convertedBody}
   }
 
   private convertJSXToHorizon(jsx: string): string {
-    // Convert JSX to TypeScript object/function calls structure
-    jsx = this.convertJSXElement(jsx, 'div', '// TODO: Convert div to Meta Horizon container');
-    jsx = this.convertJSXElement(jsx, 'span', '// TODO: Convert span to Meta Horizon container');
-    jsx = this.convertJSXElement(jsx, 'section', '// TODO: Convert section to Meta Horizon container');
-    jsx = this.convertJSXElement(jsx, 'article', '// TODO: Convert article to Meta Horizon container');
+    // Convert JSX elements following Horizon UI mapping specifications
+    jsx = this.convertDivElements(jsx);
     jsx = this.convertTextElements(jsx);
     jsx = this.convertButtonElements(jsx);
     jsx = this.convertImageElements(jsx);
     jsx = this.convertListElements(jsx);
+    jsx = this.convertGenericElements(jsx);
+    
+    return jsx;
+  }
+
+  private convertDivElements(jsx: string): string {
+    // Convert <div> elements to View() - used for layout wrappers
+    return this.convertJSXElement(jsx, 'div', 'View');
+  }
+
+  private convertGenericElements(jsx: string): string {
+    // Convert other container elements to View() with TODO comments
+    jsx = this.convertJSXElement(jsx, 'span', 'View /* TODO: Convert span to appropriate Meta Horizon component */');
+    jsx = this.convertJSXElement(jsx, 'section', 'View /* TODO: Convert section to appropriate Meta Horizon component */');
+    jsx = this.convertJSXElement(jsx, 'article', 'View /* TODO: Convert article to appropriate Meta Horizon component */');
+    jsx = this.convertJSXElement(jsx, 'main', 'View /* TODO: Convert main to appropriate Meta Horizon component */');
+    jsx = this.convertJSXElement(jsx, 'header', 'View /* TODO: Convert header to appropriate Meta Horizon component */');
+    jsx = this.convertJSXElement(jsx, 'footer', 'View /* TODO: Convert footer to appropriate Meta Horizon component */');
+    jsx = this.convertJSXElement(jsx, 'nav', 'View /* TODO: Convert nav to appropriate Meta Horizon component */');
+    jsx = this.convertJSXElement(jsx, 'aside', 'View /* TODO: Convert aside to appropriate Meta Horizon component */');
     
     return jsx;
   }
@@ -283,7 +307,7 @@ ${convertedBody}
   }
 
   private convertTextElements(jsx: string): string {
-    // Convert <p>, <h1>-<h6>, <span> with text content to Text()
+    // Convert <p>, <h1>-<h6> with text content to Text() - Use Text for any readable content
     const textTags = ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
     
     textTags.forEach(tag => {
@@ -292,13 +316,24 @@ ${convertedBody}
         const props = this.parseAttributes(attributes);
         const textContent = content.trim();
         
-        // Check if content is just text or contains variables
+        // Handle template literals and expressions properly
         if (textContent.includes('{') && textContent.includes('}')) {
-          const cleanContent = textContent.replace(/[{}]/g, '');
-          return `Text({ text: ${cleanContent}${props ? ', ' + props : ''} })`;
-        } else {
+          // Extract expression content and handle template literals
+          const expressionMatch = textContent.match(/\{([^}]+)\}/);
+          if (expressionMatch) {
+            const expression = expressionMatch[1].trim();
+            // Check if it's a template literal
+            if (expression.includes('`') || expression.includes('${')) {
+              return `Text({ text: ${expression}${props ? ', ' + props : ''} })`;
+            } else {
+              return `Text({ text: ${expression}${props ? ', ' + props : ''} })`;
+            }
+          }
+        } else if (textContent) {
           return `Text({ text: "${textContent}"${props ? ', ' + props : ''} })`;
         }
+        
+        return match; // fallback if parsing fails
       });
     });
 
@@ -350,11 +385,11 @@ ${convertedBody}
     
     const attributes: string[] = [];
     
-    // Parse className to style
+    // Parse className to style with proper TODO comment
     const classNameMatch = attributesStr.match(/className\s*=\s*["']([^"']+)["']/);
     if (classNameMatch) {
       this.warnings.push('Converting className to style object - manual style conversion needed');
-      attributes.push(`style: { /* Convert CSS classes: ${classNameMatch[1]} */ }`);
+      attributes.push(`style: { /* TODO: Convert className to Horizon style - CSS classes: ${classNameMatch[1]} */ }`);
     }
     
     // Parse style attribute
@@ -373,7 +408,12 @@ ${convertedBody}
         if (stringValue !== undefined) {
           attributes.push(`${name}: "${stringValue}"`);
         } else if (jsValue !== undefined) {
-          attributes.push(`${name}: ${jsValue}`);
+          // Convert onClick to onPress for event handlers
+          if (name === 'onClick') {
+            attributes.push(`onPress: ${jsValue}`);
+          } else {
+            attributes.push(`${name}: ${jsValue}`);
+          }
         }
       });
     }

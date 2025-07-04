@@ -62,9 +62,10 @@ export class ReactToHorizonConverter {
   }
 
   private replaceImports(code: string): string {
-    // Remove React imports and add TypeScript-only Meta Horizon imports
-    const horizonImports = `// Meta Horizon Worlds TypeScript Component
+    // Remove React imports and add Meta Horizon Worlds imports
+    const horizonImports = `// Meta Horizon Worlds UIComponent
 // Generated from React component - manual verification required
+import { UIComponent } from '@/runtime/ui/UIComponent';
 
 `;
     
@@ -109,17 +110,28 @@ export class ReactToHorizonConverter {
       
       return `${propsInterface}
 
-// TODO: Extend appropriate Meta Horizon Worlds base class
-export class ${componentName} {
+export class ${componentName} extends UIComponent {
   private props: ${componentName}Props;${stateDeclarations}
   
   constructor(props: ${componentName}Props) {
+    super();
     this.props = props;
   }
 ${methods}
   
-  // TODO: Implement Meta Horizon UI rendering method
-  render(): any {
+  // Horizon UI lifecycle method - called after constructor
+  initializeUI(): void {
+    // TODO: Initialize UI components here
+  }
+  
+  // Horizon UI lifecycle method - called before start
+  prestart(): void {
+    // TODO: Setup logic before component starts
+  }
+  
+  // Horizon UI lifecycle method - called when component starts
+  start(): void {
+    // TODO: Move useEffect logic here
 ${convertedBody}
   }
 }`;
@@ -145,10 +157,10 @@ ${convertedBody}
       this.components.push(componentInfo);
     }
     
-    // Convert React.Component to plain TypeScript class
-    return code.replace(/extends\s+React\.Component/g, '// TODO: Extend appropriate Meta Horizon base class')
-               .replace(/extends\s+Component/g, '// TODO: Extend appropriate Meta Horizon base class')
-               .replace(/render\(\)\s*{/g, 'render(): any { // TODO: Use appropriate Meta Horizon return type');
+    // Convert React.Component to UIComponent
+    return code.replace(/extends\s+React\.Component/g, 'extends UIComponent')
+               .replace(/extends\s+Component/g, 'extends UIComponent')
+               .replace(/render\(\)\s*{/g, 'start(): void { // TODO: Move render logic to start() lifecycle method');
   }
 
   private generatePropsInterface(propsStr: string, componentName: string): string {
@@ -315,7 +327,9 @@ ${convertedBody}
   }
 
   private convertJSXToHorizon(jsx: string): string {
-    // Convert JSX elements following Horizon UI mapping specifications
+    // Convert JSX to Horizon UI component creation calls for initializeUI
+    this.warnings.push('Converting JSX to Horizon UI component creation - move to initializeUI method');
+    
     jsx = this.convertDivElements(jsx);
     jsx = this.convertTextElements(jsx);
     jsx = this.convertButtonElements(jsx);
@@ -323,7 +337,8 @@ ${convertedBody}
     jsx = this.convertListElements(jsx);
     jsx = this.convertGenericElements(jsx);
     
-    return jsx;
+    return `// TODO: Create UI components in initializeUI() and update in start()
+    // ${jsx.replace(/\n/g, '\n    // ')}`;
   }
 
   private convertDivElements(jsx: string): string {

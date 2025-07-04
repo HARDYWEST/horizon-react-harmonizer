@@ -3,6 +3,7 @@ interface ConversionResult {
   code: string;
   errors: string[];
   warnings: string[];
+  components: ComponentInfo[];
 }
 
 interface ComponentInfo {
@@ -16,10 +17,12 @@ interface ComponentInfo {
 export class ReactToHorizonConverter {
   private errors: string[] = [];
   private warnings: string[] = [];
+  private components: ComponentInfo[] = [];
 
   convert(reactCode: string): ConversionResult {
     this.errors = [];
     this.warnings = [];
+    this.components = [];
 
     try {
       const converted = this.processReactCode(reactCode);
@@ -27,7 +30,8 @@ export class ReactToHorizonConverter {
         success: this.errors.length === 0,
         code: converted,
         errors: this.errors,
-        warnings: this.warnings
+        warnings: this.warnings,
+        components: this.components
       };
     } catch (error) {
       this.errors.push(`Conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -35,7 +39,8 @@ export class ReactToHorizonConverter {
         success: false,
         code: '',
         errors: this.errors,
-        warnings: this.warnings
+        warnings: this.warnings,
+        components: this.components
       };
     }
   }
@@ -89,6 +94,16 @@ export class ReactToHorizonConverter {
     return code.replace(funcComponentRegex, (match, componentName, props, body) => {
       this.warnings.push(`Converting functional component: ${componentName}`);
       
+      // Extract component info for debugging
+      const componentInfo: ComponentInfo = {
+        name: componentName,
+        props: this.extractProps(props),
+        state: this.extractStateFromBody(body),
+        effects: this.extractEffectsFromBody(body),
+        isClass: false
+      };
+      this.components.push(componentInfo);
+      
       const propsInterface = this.generatePropsInterface(props);
       const convertedBody = this.convertComponentBody(body, componentName);
       
@@ -111,6 +126,24 @@ ${convertedBody}
   }
 
   private convertClassComponents(code: string): string {
+    // Match class component patterns to extract info
+    const classComponentRegex = /(?:export\s+)?class\s+(\w+)\s+extends\s+(?:React\.)?Component(?:<([^>]+)>)?\s*{([\s\S]*?)}/g;
+    
+    let match;
+    while ((match = classComponentRegex.exec(code)) !== null) {
+      const [, componentName, propsType, body] = match;
+      
+      // Extract component info for debugging
+      const componentInfo: ComponentInfo = {
+        name: componentName,
+        props: this.extractClassProps(propsType),
+        state: this.extractClassStateFromBody(body),
+        effects: this.extractEffectsFromBody(body),
+        isClass: true
+      };
+      this.components.push(componentInfo);
+    }
+    
     // Convert React.Component to plain TypeScript class
     return code.replace(/extends\s+React\.Component/g, '// TODO: Extend appropriate Meta Horizon base class')
                .replace(/extends\s+Component/g, '// TODO: Extend appropriate Meta Horizon base class')
@@ -377,5 +410,103 @@ ${convertedBody}
     code = code.replace(/const\s+(\w+)\s*=\s*useRef\(([^)]*)\);?/g, 'const $1 = { current: $2 }; // TODO: Convert to Horizon equivalent');
     
     return code;
+  }
+
+  // ComponentInfo extraction methods for debugging
+  private extractProps(propsStr: string): string[] {
+    if (!propsStr.trim()) return [];
+    
+    const propMatches = propsStr.match(/{\s*([^}]+)\s*}/);
+    if (propMatches) {
+      return propMatches[1]
+        .split(',')
+        .map(prop => prop.split('=')[0].trim())
+        .filter(prop => prop.length > 0);
+    }
+    
+    // Simple prop parameter (non-destructured)
+    if (propsStr.trim() && !propsStr.includes('{')) {
+      return [propsStr.trim()];
+    }
+    
+    return [];
+  }
+
+  private extractStateFromBody(body: string): string[] {
+    const stateVars: string[] = [];
+    const useStateRegex = /const\s+\[(\w+),\s*(\w+)\]\s*=\s*useState\(([^)]*)\);?/g;
+    
+    let match;
+    while ((match = useStateRegex.exec(body)) !== null) {
+      stateVars.push(`${match[1]} (${this.inferTypeFromValue(match[3] || 'null')})`);
+    }
+    
+    return stateVars;
+  }
+
+  private extractEffectsFromBody(body: string): string[] {
+    const effects: string[] = [];
+    const useEffectRegex = /useEffect\(\(\)\s*=>\s*{([\s\S]*?)},\s*\[([^\]]*)\]\);?/g;
+    
+    let match;
+    while ((match = useEffectRegex.exec(body)) !== null) {
+      const deps = match[2].trim();
+      const effectDescription = match[1].trim().split('\n')[0].substring(0, 50) + '...';
+      effects.push(`Effect [${deps || 'no deps'}]: ${effectDescription}`);
+    }
+    
+    return effects;
+  }
+
+  private extractClassProps(propsType?: string): string[] {
+    if (!propsType) return [];
+    
+    // Handle interface/type props like "{ title: string, count: number }"
+    const propMatches = propsType.match(/{\s*([^}]+)\s*}/);
+    if (propMatches) {
+      return propMatches[1]
+        .split(',')
+        .map(prop => {
+          const colonIndex = prop.indexOf(':');
+          return colonIndex > 0 ? prop.substring(0, colonIndex).trim() : prop.trim();
+        })
+        .filter(prop => prop.length > 0);
+    }
+    
+    // Handle named interface/type
+    if (propsType.trim()) {
+      return [`Props (${propsType.trim()})`];
+    }
+    
+    return [];
+  }
+
+  private extractClassStateFromBody(body: string): string[] {
+    const stateVars: string[] = [];
+    
+    // Look for this.state declarations
+    const stateRegex = /this\.state\s*=\s*{([^}]+)}/g;
+    let match;
+    while ((match = stateRegex.exec(body)) !== null) {
+      const stateContent = match[1];
+      const stateProps = stateContent
+        .split(',')
+        .map(prop => {
+          const colonIndex = prop.indexOf(':');
+          if (colonIndex > 0) {
+            const name = prop.substring(0, colonIndex).trim();
+            const value = prop.substring(colonIndex + 1).trim();
+            return `${name} (${this.inferTypeFromValue(value)})`;
+          }
+          return prop.trim();
+        })
+        .filter(prop => prop.length > 0);
+      stateVars.push(...stateProps);
+    }
+    
+    // Also check for useState hooks (mixed class/functional patterns)
+    stateVars.push(...this.extractStateFromBody(body));
+    
+    return stateVars;
   }
 }

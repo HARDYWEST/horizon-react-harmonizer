@@ -16,6 +16,13 @@ const Index = () => {
     success: boolean;
     errors: string[];
     warnings: string[];
+    components: Array<{
+      name: string;
+      props: string[];
+      state: string[];
+      effects: string[];
+      isClass: boolean;
+    }>;
   } | null>(null);
   const { toast } = useToast();
 
@@ -36,7 +43,8 @@ const Index = () => {
     setConversionResult({
       success: result.success,
       errors: result.errors,
-      warnings: result.warnings
+      warnings: result.warnings,
+      components: result.components
     });
 
     toast({
@@ -206,6 +214,66 @@ const Index = () => {
               warnings={conversionResult.warnings}
             />
           </div>
+        )}
+
+        {/* Component Debug Information */}
+        {conversionResult && conversionResult.components.length > 0 && (
+          <Card className="p-6 mb-8 border-converter-accent/20 bg-gradient-to-r from-converter-accent/5 to-transparent">
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                <Code className="w-5 h-5 text-converter-accent" />
+                Detected Components ({conversionResult.components.length})
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {conversionResult.components.map((component, index) => (
+                  <Card key={index} className="p-4 border-border/50 bg-background/50">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${component.isClass ? 'bg-orange-500' : 'bg-blue-500'}`} />
+                        <h4 className="font-semibold text-foreground">{component.name}</h4>
+                        <span className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground">
+                          {component.isClass ? 'Class' : 'Function'}
+                        </span>
+                      </div>
+                      
+                      {component.props.length > 0 && (
+                        <div>
+                          <h5 className="text-sm font-medium text-foreground mb-1">Props:</h5>
+                          <ul className="text-xs text-muted-foreground space-y-1">
+                            {component.props.map((prop, i) => (
+                              <li key={i} className="truncate">• {prop}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {component.state.length > 0 && (
+                        <div>
+                          <h5 className="text-sm font-medium text-foreground mb-1">State:</h5>
+                          <ul className="text-xs text-muted-foreground space-y-1">
+                            {component.state.map((state, i) => (
+                              <li key={i} className="truncate">• {state}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {component.effects.length > 0 && (
+                        <div>
+                          <h5 className="text-sm font-medium text-foreground mb-1">Effects:</h5>
+                          <ul className="text-xs text-muted-foreground space-y-1">
+                            {component.effects.map((effect, i) => (
+                              <li key={i} className="truncate">• {effect}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          </Card>
         )}
 
         {/* Information Section */}

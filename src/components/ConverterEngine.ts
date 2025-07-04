@@ -379,7 +379,10 @@ ${convertedBody}
       const convertedChildren = this.convertChildren(children);
       
       if (convertedChildren.trim()) {
-        return `${horizonFunction}({ ${props}${props ? ', ' : ''}children: ${convertedChildren} })`;
+        const childrenProp = convertedChildren.startsWith('[') ? 
+          `children: ${convertedChildren}` : 
+          `children: [${convertedChildren}]`;
+        return `${horizonFunction}({ ${props}${props ? ', ' : ''}${childrenProp} })`;
       } else {
         return `${horizonFunction}({ ${props} })`;
       }
@@ -398,20 +401,25 @@ ${convertedBody}
         const props = this.parseAttributes(attributes);
         const textContent = content.trim();
         
-        // Handle template literals and expressions properly
+        // Handle dynamic expressions and template literals properly
         if (textContent.includes('{') && textContent.includes('}')) {
-          // Extract expression content and handle template literals
-          const expressionMatch = textContent.match(/\{([^}]+)\}/);
-          if (expressionMatch) {
-            const expression = expressionMatch[1].trim();
-            // Check if it's a template literal
-            if (expression.includes('`') || expression.includes('${')) {
-              return `Text({ text: ${expression}${props ? ', ' + props : ''} })`;
-            } else {
-              return `Text({ text: ${expression}${props ? ', ' + props : ''} })`;
+          // Check for mixed static text and expressions
+          const hasStaticAndDynamic = /[^{}]+\{[^}]+\}|^[^{}]*\{[^}]+\}[^{}]*$/.test(textContent);
+          
+          if (hasStaticAndDynamic) {
+            // Convert to template literal for mixed content
+            const templateContent = textContent.replace(/\{([^}]+)\}/g, '${this.$1}');
+            return `Text({ text: \`${templateContent.replace(/\{|\}/g, '')}\`${props ? ', ' + props : ''} })`;
+          } else {
+            // Pure expression content
+            const expressionMatch = textContent.match(/\{([^}]+)\}/);
+            if (expressionMatch) {
+              const expression = expressionMatch[1].trim();
+              return `Text({ text: this.${expression}${props ? ', ' + props : ''} })`;
             }
           }
         } else if (textContent) {
+          // Pure static text
           return `Text({ text: "${textContent}"${props ? ', ' + props : ''} })`;
         }
         
@@ -467,51 +475,68 @@ ${convertedBody}
     
     const attributes: string[] = [];
     
-    // Parse className to style with proper TODO comment
-    const classNameMatch = attributesStr.match(/className\s*=\s*["']([^"']+)["']/);
+    // Parse className to style with proper TODO comment - more robust regex
+    const classNameMatch = attributesStr.match(/className\s*=\s*(?:["']([^"']+)["']|\{([^}]+)\})/);
     if (classNameMatch) {
+      const className = classNameMatch[1] || classNameMatch[2];
       this.warnings.push('Converting className to style object - manual style conversion needed');
-      attributes.push(`style: { /* TODO: Convert className to Horizon style - CSS classes: ${classNameMatch[1]} */ }`);
+      attributes.push(`style: { /* TODO: Convert className to Horizon style - CSS classes: ${className} */ }`);
     }
     
-    // Parse style attribute
-    const styleMatch = attributesStr.match(/style\s*=\s*{([^}]+)}/);
+    // Parse style attribute - more robust
+    const styleMatch = attributesStr.match(/style\s*=\s*\{([^}]+)\}/);
     if (styleMatch) {
       attributes.push(`style: { ${styleMatch[1]} }`);
     }
     
-    // Parse other attributes
-    const otherAttrs = attributesStr.replace(/(?:className|style)\s*=\s*(?:["'][^"']*["']|{[^}]*})/g, '');
-    const attrMatches = otherAttrs.match(/(\w+)\s*=\s*(?:["']([^"']*)["']|{([^}]*)})/g);
+    // Parse onClick specifically - ensure it's always converted to onPress
+    const onClickMatch = attributesStr.match(/onClick\s*=\s*\{([^}]+)\}/);
+    if (onClickMatch) {
+      const handler = onClickMatch[1].trim();
+      // Add this. prefix if it's a method reference
+      const prefixedHandler = handler.includes('this.') ? handler : `this.${handler}`;
+      attributes.push(`onPress: ${prefixedHandler}`);
+    }
     
-    if (attrMatches) {
-      attrMatches.forEach(attr => {
-        const [, name, stringValue, jsValue] = attr.match(/(\w+)\s*=\s*(?:["']([^"']*)["']|{([^}]*)})/);
-        if (stringValue !== undefined) {
-          attributes.push(`${name}: "${stringValue}"`);
-        } else if (jsValue !== undefined) {
-          // Convert onClick to onPress for event handlers
-          if (name === 'onClick') {
-            attributes.push(`onPress: ${jsValue}`);
-          } else {
-            attributes.push(`${name}: ${jsValue}`);
+    // Parse other attributes - exclude already processed ones
+    const otherAttrs = attributesStr
+      .replace(/(?:className|style|onClick)\s*=\s*(?:["'][^"']*["']|\{[^}]*\})/g, '')
+      .trim();
+    
+    if (otherAttrs) {
+      const attrMatches = otherAttrs.match(/(\w+)\s*=\s*(?:["']([^"']*)["']|\{([^}]*)\})/g);
+      
+      if (attrMatches) {
+        attrMatches.forEach(attr => {
+          const match = attr.match(/(\w+)\s*=\s*(?:["']([^"']*)["']|\{([^}]*)\})/);
+          if (match) {
+            const [, name, stringValue, jsValue] = match;
+            if (stringValue !== undefined) {
+              attributes.push(`${name}: "${stringValue}"`);
+            } else if (jsValue !== undefined) {
+              // Add this. prefix for method references
+              const prefixedValue = jsValue.includes('this.') ? jsValue : 
+                                   (name.startsWith('on') ? `this.${jsValue}` : jsValue);
+              attributes.push(`${name}: ${prefixedValue}`);
+            }
           }
-        }
-      });
+        });
+      }
     }
     
     return attributes.join(', ');
   }
 
   private convertReturnStatementWithThisPrefix(code: string): string {
-    // Find the return statement with JSX, ensuring no line break after return
+    // Find the return statement with JSX
     const returnRegex = /return\s*\(([\s\S]*?)\);?\s*$/;
     const match = code.match(returnRegex);
     
     if (match) {
-      const jsxContent = match[1];
+      const jsxContent = match[1].trim();
+      // Convert JSX to actual Horizon UI component calls
       const convertedJSX = this.convertJSXToHorizon(jsxContent);
-      // Ensure no line break after return
+      // Return the properly converted Horizon UI code
       return code.replace(returnRegex, `return ${convertedJSX};`);
     }
     
@@ -519,17 +544,20 @@ ${convertedBody}
   }
 
   private addThisPrefixToReferences(code: string, stateNames: string[]): string {
-    // Add this. prefix to props access
-    code = code.replace(/([^.])\b(props\.\w+)/g, '$1this.$2');
+    // Add this. prefix to props access (but not if already has this.)
+    code = code.replace(/(?<!this\.)(\bprops\.\w+)/g, 'this.$1');
     
     // Add this. prefix to state variable references
     stateNames.forEach(stateName => {
-      const stateRegex = new RegExp(`\\b${stateName}\\b`, 'g');
+      const stateRegex = new RegExp(`(?<!this\\.)\\b${stateName}\\b`, 'g');
       code = code.replace(stateRegex, `this.${stateName}`);
     });
     
-    // Add this. prefix to setter function calls
-    code = code.replace(/\b(set\w+)\s*\(/g, 'this.$1(');
+    // Add this. prefix to setter function calls (but not if already has this.)
+    code = code.replace(/(?<!this\.)(\bset\w+)\s*\(/g, 'this.$1(');
+    
+    // Add this. prefix to method calls that aren't already prefixed
+    code = code.replace(/(?<!this\.)(\bhandle\w+)(?=\s*[(),])/g, 'this.$1');
     
     return code;
   }
@@ -546,7 +574,18 @@ ${convertedBody}
     // Check if we have multiple JSX elements that need to be wrapped in an array
     const jsxElements = this.extractJSXElements(trimmed);
     if (jsxElements.length > 1) {
-      const convertedElements = jsxElements.map(element => this.convertJSXToHorizon(element));
+      const convertedElements = jsxElements.map(element => {
+        if (element.includes('<')) {
+          return this.convertJSXToHorizon(element);
+        } else if (element.includes('{') && element.includes('}')) {
+          // Handle expression
+          const expressionMatch = element.match(/\{([^}]+)\}/);
+          if (expressionMatch) {
+            return `this.${expressionMatch[1].trim()}`;
+          }
+        }
+        return `"${element.trim()}"`;
+      });
       return `[${convertedElements.join(', ')}]`;
     }
     
@@ -555,8 +594,16 @@ ${convertedBody}
       return this.convertJSXToHorizon(trimmed);
     }
     
-    // If it contains expressions, return as-is
-    return trimmed;
+    // If it contains expressions, handle them
+    if (trimmed.includes('{') && trimmed.includes('}')) {
+      const expressionMatch = trimmed.match(/\{([^}]+)\}/);
+      if (expressionMatch) {
+        return `this.${expressionMatch[1].trim()}`;
+      }
+    }
+    
+    // Plain text
+    return `"${trimmed}"`;
   }
 
   private extractJSXElements(jsx: string): string[] {

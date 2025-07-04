@@ -105,17 +105,18 @@ export class ReactToHorizonConverter {
       this.components.push(componentInfo);
       
       const propsInterface = this.generatePropsInterface(props, componentName);
-      const convertedBody = this.convertComponentBody(body, componentName);
+      const { stateDeclarations, methods, convertedBody } = this.convertComponentBodyWithStateExtraction(body, componentName);
       
       return `${propsInterface}
 
 // TODO: Extend appropriate Meta Horizon Worlds base class
 export class ${componentName} {
-  private props: ${componentName}Props;
+  private props: ${componentName}Props;${stateDeclarations}
   
   constructor(props: ${componentName}Props) {
     this.props = props;
   }
+${methods}
   
   // TODO: Implement Meta Horizon UI rendering method
   render(): any {
@@ -188,6 +189,68 @@ ${convertedBody}
     if (value.startsWith('[')) return 'any[]';
     if (value.startsWith('{')) return 'object';
     return 'any';
+  }
+
+  private convertComponentBodyWithStateExtraction(body: string, componentName: string): { stateDeclarations: string, methods: string, convertedBody: string } {
+    let stateDeclarations = '';
+    let methods = '';
+    let convertedBody = body;
+    
+    // Extract and convert useState hooks to class state declarations
+    const useStateRegex = /const\s+\[(\w+),\s*(\w+)\]\s*=\s*useState\(([^)]*)\);?/g;
+    let match;
+    const stateVars: Array<{name: string, setter: string, type: string, initial: string}> = [];
+    
+    while ((match = useStateRegex.exec(body)) !== null) {
+      const [fullMatch, stateName, setter, initialValue] = match;
+      const inferredType = this.inferTypeFromValue(initialValue || 'null');
+      
+      stateVars.push({
+        name: stateName,
+        setter: setter,
+        type: inferredType,
+        initial: initialValue || 'null'
+      });
+      
+      // Remove useState from body
+      convertedBody = convertedBody.replace(fullMatch, '');
+    }
+    
+    // Generate state declarations
+    if (stateVars.length > 0) {
+      stateDeclarations = '\n  // TODO: Implement state as Binding<T> for Meta Horizon';
+      stateVars.forEach(state => {
+        stateDeclarations += `\n  private ${state.name}: ${state.type} = ${state.initial};`;
+      });
+    }
+    
+    // Generate setter methods
+    if (stateVars.length > 0) {
+      methods = stateVars.map(state => {
+        return `  private ${state.setter} = (newValue: ${state.type}) => {
+    this.${state.name} = newValue;
+    // TODO: Update binding to trigger re-render
+  };`;
+      }).join('\n\n');
+    }
+    
+    // Convert useEffect to component lifecycle comments
+    convertedBody = this.convertUseEffect(convertedBody);
+    
+    // Convert return statement and add this. prefixes
+    convertedBody = this.convertReturnStatementWithThisPrefix(convertedBody);
+    
+    // Add this. prefix to all state and prop references
+    convertedBody = this.addThisPrefixToReferences(convertedBody, stateVars.map(s => s.name));
+    
+    // Indent the body properly
+    convertedBody = convertedBody.split('\n').map(line => `    ${line}`).join('\n');
+    
+    return {
+      stateDeclarations,
+      methods,
+      convertedBody
+    };
   }
 
   private convertComponentBody(body: string, componentName: string): string {
@@ -421,6 +484,37 @@ ${convertedBody}
     return attributes.join(', ');
   }
 
+  private convertReturnStatementWithThisPrefix(code: string): string {
+    // Find the return statement with JSX, ensuring no line break after return
+    const returnRegex = /return\s*\(([\s\S]*?)\);?\s*$/;
+    const match = code.match(returnRegex);
+    
+    if (match) {
+      const jsxContent = match[1];
+      const convertedJSX = this.convertJSXToHorizon(jsxContent);
+      // Ensure no line break after return
+      return code.replace(returnRegex, `return ${convertedJSX};`);
+    }
+    
+    return code;
+  }
+
+  private addThisPrefixToReferences(code: string, stateNames: string[]): string {
+    // Add this. prefix to props access
+    code = code.replace(/([^.])\b(props\.\w+)/g, '$1this.$2');
+    
+    // Add this. prefix to state variable references
+    stateNames.forEach(stateName => {
+      const stateRegex = new RegExp(`\\b${stateName}\\b`, 'g');
+      code = code.replace(stateRegex, `this.${stateName}`);
+    });
+    
+    // Add this. prefix to setter function calls
+    code = code.replace(/\b(set\w+)\s*\(/g, 'this.$1(');
+    
+    return code;
+  }
+
   private convertChildren(children: string): string {
     const trimmed = children.trim();
     if (!trimmed) return '';
@@ -430,6 +524,13 @@ ${convertedBody}
       return `"${trimmed}"`;
     }
     
+    // Check if we have multiple JSX elements that need to be wrapped in an array
+    const jsxElements = this.extractJSXElements(trimmed);
+    if (jsxElements.length > 1) {
+      const convertedElements = jsxElements.map(element => this.convertJSXToHorizon(element));
+      return `[${convertedElements.join(', ')}]`;
+    }
+    
     // If it contains JSX, convert it
     if (trimmed.includes('<')) {
       return this.convertJSXToHorizon(trimmed);
@@ -437,6 +538,48 @@ ${convertedBody}
     
     // If it contains expressions, return as-is
     return trimmed;
+  }
+
+  private extractJSXElements(jsx: string): string[] {
+    const elements: string[] = [];
+    let depth = 0;
+    let currentElement = '';
+    let i = 0;
+    
+    while (i < jsx.length) {
+      const char = jsx[i];
+      
+      if (char === '<') {
+        if (jsx[i + 1] === '/') {
+          // Closing tag
+          depth--;
+          currentElement += char;
+        } else {
+          // Opening tag
+          if (depth === 0 && currentElement.trim()) {
+            elements.push(currentElement.trim());
+            currentElement = '';
+          }
+          depth++;
+          currentElement += char;
+        }
+      } else {
+        currentElement += char;
+      }
+      
+      if (depth === 0 && currentElement.trim()) {
+        elements.push(currentElement.trim());
+        currentElement = '';
+      }
+      
+      i++;
+    }
+    
+    if (currentElement.trim()) {
+      elements.push(currentElement.trim());
+    }
+    
+    return elements.filter(el => el.length > 0);
   }
 
   private convertHooks(code: string): string {

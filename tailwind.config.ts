@@ -19,6 +19,13 @@ export default {
 		},
 		extend: {
 			colors: {
+				'converter-accent': 'hsl(var(--converter-accent))',
+				'converter-success': 'hsl(var(--converter-success))',
+				'converter-warning': 'hsl(var(--converter-warning))',
+				'converter-error': 'hsl(var(--converter-error))',
+				'code-bg': 'hsl(var(--code-bg))',
+				'code-text': 'hsl(var(--code-text))',
+				'code-border': 'hsl(var(--code-border))',
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
 				ring: 'hsl(var(--ring))',
@@ -62,6 +69,20 @@ export default {
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
 				}
+			},
+			backgroundImage: {
+				'gradient-primary': 'var(--gradient-primary)',
+				'gradient-code': 'var(--gradient-code)',
+				'gradient-success': 'var(--gradient-success)',
+			},
+			boxShadow: {
+				'converter': 'var(--shadow-converter)',
+				'code': 'var(--shadow-code)',
+				'glow': 'var(--shadow-glow)',
+			},
+			transitionTimingFunction: {
+				'smooth': 'var(--transition-smooth)',
+				'bounce': 'var(--transition-bounce)',
 			},
 			borderRadius: {
 				lg: 'var(--radius)',

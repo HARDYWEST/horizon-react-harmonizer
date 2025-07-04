@@ -6,12 +6,14 @@ import { CodeEditor } from '@/components/CodeEditor';
 import { ReactToHorizonConverter } from '@/components/ConverterEngine';
 import { ConversionStatus } from '@/components/ConversionStatus';
 import { ExampleSelector } from '@/components/ExampleSelector';
-import { ArrowRight, Copy, Download, Sparkles, Code, Zap } from 'lucide-react';
+import { ReactCodePreview } from '@/components/ReactCodePreview';
+import { ArrowRight, Copy, Download, Sparkles, Code, Zap, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [reactCode, setReactCode] = useState('');
   const [horizonCode, setHorizonCode] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
   const [conversionResult, setConversionResult] = useState<{
     success: boolean;
     errors: string[];
@@ -132,14 +134,26 @@ const Index = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Input Section */}
           <Card className="p-6 shadow-converter border-border/50">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-foreground">React Code</h2>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Code className="w-4 h-4" />
-                  <span>JSX/TSX</span>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold text-foreground">React Code</h2>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowPreview(!showPreview)}
+                      disabled={!reactCode.trim()}
+                      className="transition-smooth hover:bg-primary/10"
+                    >
+                      {showPreview ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPreview ? 'Hide Preview' : 'Show Preview'}
+                    </Button>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Code className="w-4 h-4" />
+                      <span>JSX/TSX</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
               <CodeEditor
                 value={reactCode}
                 onChange={setReactCode}
@@ -189,6 +203,16 @@ const Index = () => {
             </div>
           </Card>
         </div>
+
+        {/* React Code Preview */}
+        {showPreview && reactCode.trim() && (
+          <div className="mb-8">
+            <ReactCodePreview 
+              code={reactCode} 
+              onClose={() => setShowPreview(false)}
+            />
+          </div>
+        )}
 
         {/* Convert Button */}
         <div className="flex justify-center mb-8">

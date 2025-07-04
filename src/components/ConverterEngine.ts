@@ -57,14 +57,17 @@ export class ReactToHorizonConverter {
   }
 
   private replaceImports(code: string): string {
-    // Remove React imports and add Horizon imports
-    const horizonImports = `import { UIComponent, UINode, Binding, AnimatedBinding, View, Text, Pressable, ScrollView, Image, DynamicList } from 'horizon/ui';
-import { Player } from 'horizon/core';
+    // Remove React imports and add TypeScript-only Meta Horizon imports
+    const horizonImports = `// Meta Horizon Worlds TypeScript Component
+// Generated from React component - manual verification required
+
 `;
     
-    // Remove React imports
+    // Remove React imports and other framework imports
     let result = code.replace(/import\s+.*from\s+['"]react['"];?\n?/g, '');
     result = result.replace(/import\s+.*from\s+['"]react\/.*['"];?\n?/g, '');
+    result = result.replace(/import\s+.*from\s+['"]@\/.*['"];?\n?/g, '');
+    result = result.replace(/import\s+.*from\s+['"].*\/.*['"];?\n?/g, '');
     
     return horizonImports + result;
   }
@@ -91,15 +94,16 @@ import { Player } from 'horizon/core';
       
       return `${propsInterface}
 
-export class ${componentName} extends UIComponent {
+// TODO: Extend appropriate Meta Horizon Worlds base class
+export class ${componentName} {
   private props: ${componentName}Props;
   
   constructor(props: ${componentName}Props) {
-    super();
     this.props = props;
   }
   
-  initializeUI(): UINode {
+  // TODO: Implement Meta Horizon UI rendering method
+  render(): any {
 ${convertedBody}
   }
 }`;
@@ -107,10 +111,10 @@ ${convertedBody}
   }
 
   private convertClassComponents(code: string): string {
-    // Convert React.Component to UIComponent
-    return code.replace(/extends\s+React\.Component/g, 'extends UIComponent')
-               .replace(/extends\s+Component/g, 'extends UIComponent')
-               .replace(/render\(\)\s*{/g, 'initializeUI(): UINode {');
+    // Convert React.Component to plain TypeScript class
+    return code.replace(/extends\s+React\.Component/g, '// TODO: Extend appropriate Meta Horizon base class')
+               .replace(/extends\s+Component/g, '// TODO: Extend appropriate Meta Horizon base class')
+               .replace(/render\(\)\s*{/g, 'render(): any { // TODO: Use appropriate Meta Horizon return type');
   }
 
   private generatePropsInterface(propsStr: string): string {
@@ -143,6 +147,16 @@ ${convertedBody}
     return 'any';
   }
 
+  private inferTypeFromValue(value: string): string {
+    if (value === 'null' || value === 'undefined') return 'any';
+    if (value.startsWith("'") || value.startsWith('"')) return 'string';
+    if (/^\d+$/.test(value)) return 'number';
+    if (value === 'true' || value === 'false') return 'boolean';
+    if (value.startsWith('[')) return 'any[]';
+    if (value.startsWith('{')) return 'object';
+    return 'any';
+  }
+
   private convertComponentBody(body: string, componentName: string): string {
     // Convert useState to Binding
     body = this.convertUseState(body);
@@ -161,9 +175,10 @@ ${convertedBody}
     const useStateRegex = /const\s+\[(\w+),\s*(\w+)\]\s*=\s*useState\(([^)]*)\);?/g;
     
     return code.replace(useStateRegex, (match, stateName, setter, initialValue) => {
-      this.warnings.push(`Converting useState for ${stateName} to Binding`);
-      return `const ${stateName} = new Binding(${initialValue || 'null'});
-    // Use ${stateName}.set(newValue) instead of ${setter}(newValue)`;
+      this.warnings.push(`Converting useState for ${stateName} - implement state management for Meta Horizon`);
+      return `// TODO: Implement state management for Meta Horizon Worlds
+    private ${stateName}: ${this.inferTypeFromValue(initialValue || 'null')} = ${initialValue || 'null'};
+    // TODO: Create setter method for ${stateName}`;
     });
   }
 
@@ -197,11 +212,11 @@ ${convertedBody}
   }
 
   private convertJSXToHorizon(jsx: string): string {
-    // Convert common JSX elements to Horizon UI function calls
-    jsx = this.convertJSXElement(jsx, 'div', 'View');
-    jsx = this.convertJSXElement(jsx, 'span', 'View');
-    jsx = this.convertJSXElement(jsx, 'section', 'View');
-    jsx = this.convertJSXElement(jsx, 'article', 'View');
+    // Convert JSX to TypeScript object/function calls structure
+    jsx = this.convertJSXElement(jsx, 'div', '// TODO: Convert div to Meta Horizon container');
+    jsx = this.convertJSXElement(jsx, 'span', '// TODO: Convert span to Meta Horizon container');
+    jsx = this.convertJSXElement(jsx, 'section', '// TODO: Convert section to Meta Horizon container');
+    jsx = this.convertJSXElement(jsx, 'article', '// TODO: Convert article to Meta Horizon container');
     jsx = this.convertTextElements(jsx);
     jsx = this.convertButtonElements(jsx);
     jsx = this.convertImageElements(jsx);

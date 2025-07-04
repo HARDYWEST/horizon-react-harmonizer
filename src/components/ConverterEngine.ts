@@ -65,7 +65,16 @@ export class ReactToHorizonConverter {
     // Remove React imports and add Meta Horizon Worlds imports
     const horizonImports = `// Meta Horizon Worlds UIComponent
 // Generated from React component - manual verification required
-import { UIComponent } from '@/runtime/ui/UIComponent';
+import { 
+  UIComponent, 
+  View, 
+  Text, 
+  Pressable, 
+  Image, 
+  ScrollView, 
+  DynamicList,
+  Binding
+} from '../horizon_ui';
 
 `;
     
@@ -121,7 +130,7 @@ ${methods}
   
   // Horizon UI lifecycle method - called after constructor
   initializeUI(): void {
-    // TODO: Initialize UI components here
+${convertedBody}
   }
   
   // Horizon UI lifecycle method - called before start
@@ -132,7 +141,6 @@ ${methods}
   // Horizon UI lifecycle method - called when component starts
   start(): void {
     // TODO: Move useEffect logic here
-${convertedBody}
   }
 }`;
     });
@@ -300,11 +308,10 @@ ${convertedBody}
     const useEffectRegex = /useEffect\(\(\)\s*=>\s*{([\s\S]*?)},\s*\[([^\]]*)\]\);?/g;
     
     return code.replace(useEffectRegex, (match, effect, deps) => {
-      this.warnings.push('Converting useEffect - place logic in onInit or lifecycle method');
-      const cleanEffect = effect.trim().replace(/\n/g, '\n    // ');
-      return `// TODO: Move this to onInit or start lifecycle method
+      this.warnings.push('Converting useEffect - place logic in start lifecycle method');
+      return `// TODO: Move this to start lifecycle method
     // Original useEffect dependencies: [${deps}]
-    // ${cleanEffect}`;
+    ${effect.trim()}`;
     });
   }
 
@@ -327,9 +334,7 @@ ${convertedBody}
   }
 
   private convertJSXToHorizon(jsx: string): string {
-    // Convert JSX to Horizon UI component creation calls for initializeUI
-    this.warnings.push('Converting JSX to Horizon UI component creation - move to initializeUI method');
-    
+    // Convert JSX to Horizon UI component creation calls
     jsx = this.convertDivElements(jsx);
     jsx = this.convertTextElements(jsx);
     jsx = this.convertButtonElements(jsx);
@@ -337,8 +342,7 @@ ${convertedBody}
     jsx = this.convertListElements(jsx);
     jsx = this.convertGenericElements(jsx);
     
-    return `// TODO: Create UI components in initializeUI() and update in start()
-    // ${jsx.replace(/\n/g, '\n    // ')}`;
+    return jsx;
   }
 
   private convertDivElements(jsx: string): string {
